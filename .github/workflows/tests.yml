@@ -1,13 +1,16 @@
 name: "Tests"
 on:
-  pull_request:
-  push:
-    branches:
-      - master
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: 'Jasmine --filter regex; empty runs the full suite'
+        required: false
+        default: ''
 
 jobs:
   Test:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    timeout-minutes: 30
     strategy:
       matrix:
         node_version: ['lts/*', 'node']
@@ -22,12 +25,38 @@ jobs:
       - name: Install Dependencies
         run: npm ci
       - name: Run Unit Tests 👩🏽‍💻
-        run: npm run test:unit
+        run: |
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            npm run test:unit -- --filter="${{ inputs.test-filter }}"
+          else
+            npm run test:unit
+          fi
       - name: Run Spec Tests 👩🏽‍💻
-        run: npm run test:specs
+        run: |
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            npm run test:specs -- --filter="${{ inputs.test-filter }}"
+          else
+            npm run test:specs
+          fi
+      - name: Build 🗜️
+        if: matrix.node_version == 'lts/*'
+        run: npm run build
+      - name: Pack 📦
+        if: matrix.node_version == 'lts/*'
+        run: |
+          mkdir -p dist-pack
+          npm pack --pack-destination dist-pack
+      - name: Upload package
+        if: matrix.node_version == 'lts/*'
+        uses: actions/upload-artifact@v4
+        with:
+          name: marked-tgz
+          path: dist-pack/*.tgz
+          if-no-files-found: error
 
   Lint:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -39,9 +68,8 @@ jobs:
 
   Release:
     needs: [Test, Lint]
-    if: |
-      github.ref == 'refs/heads/master' &&
-      github.event.repository.fork == false
+    if: false
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -64,6 +92,7 @@ jobs:
 
   Skip:
     if: contains(github.event.head_commit.message, '[skip ci]')
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - name: Skip CI 🚫
